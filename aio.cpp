@@ -43,6 +43,18 @@ BGZF *aio::openFileBG(const char* a,const char* b){
   return fp;
 }
 
+// append to file
+BGZF *aio::appFileBG(const char* a,const char* b){
+
+  char *c = new char[strlen(a)+strlen(b)+1];
+  strcpy(c,a);
+  strncat(c,b,strlen(b));
+  dumpedFiles.push_back(strdup(c));
+  BGZF *fp = bgzf_open(c,"a6h");
+  delete [] c;
+  return fp;
+}
+
 htsFile *aio::openFileHts(const char* a,const char* b){
 
   char *c = new char[strlen(a)+strlen(b)+1];

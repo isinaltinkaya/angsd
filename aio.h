@@ -10,6 +10,7 @@ namespace aio{
   FILE *openFile(const char* a,const char* b);
   FILE *getFILE(const char*fname,const char* mode);
   BGZF *openFileBG(const char* a,const char* b);
+  BGZF *appFileBG(const char* a,const char* b);
   htsFile *openFileHts(const char * a, const char*b);
   htsFile *openFileHtsBcf(const char * a, const char*b);
   int isNewer(const char *newer,const char *older);

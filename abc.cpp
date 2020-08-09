@@ -27,7 +27,7 @@
 #include "abcWritePlink.h" //<- dump plink files.
 #include "abcSmartCounts.h"
 #include "abcTemplate.h"
-#include "abcRAD.h"
+#include "abcLoci.h"
 #include "abcAncestry.h"
 #include "abcIBS.h"
 #include "abcWriteVcf.h" //<- dump plink files.
@@ -79,7 +79,7 @@ abc **extra(int &nItem,const char *outfiles,int inputtype,argStruct *arguments){
   tskStuff[nit++] = new abcPSMC(outfiles,arguments,inputtype); //
   tskStuff[nit++] = new abcScounts(outfiles,arguments,inputtype); //
   tskStuff[nit++] = new abcWriteBcf(outfiles,arguments,inputtype); // 29
-  tskStuff[nit++] = new abcRAD(outfiles,arguments,inputtype); // 30
+  tskStuff[nit++] = new abcLoci(outfiles,arguments,inputtype); // 30
 
   nItem = nit;
   return tskStuff;

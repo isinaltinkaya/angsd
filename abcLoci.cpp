@@ -19,6 +19,7 @@
 #include "shared.h" //<-contains the struct defintino for funkypars
 #include "analysisFunction.h" //<-contains some utility functions, usefull for parsing args
 #include "abcLoci.h"//contains the analysis class defition associated with this file
+#include "abcFilter.h"
 #include "abc.h"
 
 
@@ -110,6 +111,46 @@ void abcLoci::getOptions(argStruct *arguments){
 	}
 }
 
+void writeIndFasta(kstring_t *bufstr,size_t len,char *nam,char *d, int start, int stop, int nbpl){
+
+	fprintf(stderr,"\t-> [%s] writing loci: %s:%d-%d\n",__FUNCTION__,nam, start, stop);
+	ksprintf(bufstr,">%s_%d-%d",nam, start, stop);
+	if(nbpl != 0){
+		for(size_t i=0;i<len;i++){
+			if(i % nbpl == 0)
+				aio::kputc('\n',bufstr);
+			aio::kputc(d!=NULL?d[i]:'N',bufstr);
+		}
+	}else{
+		aio::kputc('\n',bufstr);
+		for(size_t i=0;i<len;i++){
+			aio::kputc(d!=NULL?d[i]:'N',bufstr);
+		}
+	}
+	aio::kputc('\n',bufstr);
+
+}
+
+
+void writeLociFasta(kstring_t *bufstr,size_t len,char *nam,char *d, int start, int stop, int nbpl, char *ind){
+
+	fprintf(stderr,"\t-> [%s] writing loci: %s:%d-%d\n",__FUNCTION__,nam, start, stop);
+	ksprintf(bufstr,">%s",ind);
+	if(nbpl != 0){
+		for(size_t i=0;i<len;i++){
+			if(i % nbpl == 0)
+				aio::kputc('\n',bufstr);
+			aio::kputc(d!=NULL?d[i]:'N',bufstr);
+		}
+	}else{
+		aio::kputc('\n',bufstr);
+		for(size_t i=0;i<len;i++){
+			aio::kputc(d!=NULL?d[i]:'N',bufstr);
+		}
+	}
+	aio::kputc('\n',bufstr);
+
+}
 
 //constructor
 abcLoci::abcLoci(const char *outfiles,argStruct *arguments,int inputtype){
@@ -189,6 +230,20 @@ abcLoci::~abcLoci(){
 	if(doLoci==0) return;
 	if(ref) free(ref);
 
+	if (doIndFasta){
+		writeIndFasta(&bufstr, wl.stop-wl.start,header->target_name[wl.refid],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine);
+		aio::bgzf_write(outfileZ,bufstr.s,bufstr.l);bufstr.l=0;
+	}
+
+	if (doLociFasta){
+		fprintf(stderr,"IM WRITING %s %d %d", header->target_name[wl.refid], wl.start+1, wl.stop);
+		outfileZ = aio::appFileBG(locus.c_str(),postfix);
+		writeLociFasta(&bufstr,wl.stop-wl.start,header->target_name[wl.refid],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine,ind);
+		aio::bgzf_write(outfileZ,bufstr.s,bufstr.l);bufstr.l=0;
+	}
+
+	changeChr(-1);
+
 	if(outfileZ!=NULL) bgzf_close(outfileZ); 
 	if(bufstr.s!=NULL) free(bufstr.s);
 	if(outfile!=NULL) fclose(outfile);
@@ -197,6 +252,17 @@ abcLoci::~abcLoci(){
 
 void abcLoci::print(funkyPars *pars){
 
+
+	extern abc **allMethods;
+	filt *fl = ((abcFilter *) allMethods[0])->fl;
+
+	extern size_t total_number_of_sites_filtered;
+
+	//FIXME
+	//fprintf(stderr,"offs size %s\n", fl->offs.find(header->target_name[pars->refId])->second);
+	fprintf(stderr,"offs BEGIN %s\n", fl->keeps[]);
+	//fprintf(stderr,"\nHERE %lu\n", total_number_of_sites_filtered);
+
 	if(doLoci==0) return;
 
 	// count the number of A, C, G, T, N's for both strand
@@ -204,6 +270,7 @@ void abcLoci::print(funkyPars *pars){
 
 		//rawseqdata is in chunkyT struct (bambi_interface.h)
 		chunkyT *chk = pars->chk;
+
 		// start of the region -0 indexed
 		rStart = chk->regStart;
 		// end of the region -0 indexed
@@ -211,10 +278,22 @@ void abcLoci::print(funkyPars *pars){
 		// number of sites in rf
 		rSites=rStop-rStart;
 
+		//FIXME
+		//fprintf(stderr,"\nhere1 %d\n", fl->offs.find(header->target_name[pars->refId])->second);
+		//fprintf(stderr,"\nhere1 %lu\n", fl->keeps);
+		//fprintf(stderr,"LOVE %d" ,pars->posi[0]);
+
+		fprintf(stderr, "HELP %d", pars->numSites);
 		//loop over sites
 		for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
 
+		//fprintf(stderr,"\nhere2 %d\n", fl->offs);
+			//FIXME
 			if(pars->keepSites[s]==0)continue;
+			//if(fl->keeps[pars->posi[s]]==0)continue;
+			//fprintf(stderr,"\nPOSI %d\n", pars->posi[s]);
+			fprintf(stderr,"\nHERE1 %d\n", fl->keeps[pars->posi[s]]);
+			//fprintf(stderr,"\nHERE2 %d\n", pars->keepSites[s]);
 
 			fprintf(stderr,"\r\t-> Printing at chr: %s pos:%d loci %d contains %d sites",header->target_name[pars->refId],pars->posi[s]+1,pars->chunkNumber,rSites);
 			int bases[2][5] = {{0,0,0,0,0},{0,0,0,0,0}};      
@@ -241,11 +320,338 @@ void abcLoci::print(funkyPars *pars){
 			}
 		}
 	}
+	// print fasta
+	if(doLoci==2){
+
+		if (doIndFasta){
+			hasData=1;
+
+			//rawseqdata is in chunkyT struct (bambi_interface.h)
+			chunkyT *chk = pars->chk;
+			currentChr=pars->refId;
+
+			// if it's a different locus
+			//FIXME
+			//fprintf(stderr, "START AT %d\n", chk->regStart);
+			if(iPos == 0){
+				// init region fasta
+				free(rFasta);
+				rFasta=(char*)malloc(header->target_len[currentChr]);
+				memset(rFasta,'N', header->target_len[currentChr]);
+			}
+
+			if(doIndFasta==1){//random number read
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[currentChr];s++){
+					if(pars->keepSites[s]==0) continue;
+					iPos=pars->posi[s];
+					if(pars->nInd==1)
+						rFasta[iPos] = intToRef[ angsd::getRandomCount(pars->counts[s],0) ];
+					else
+						rFasta[iPos] = intToRef[ angsd::getRandomCountTotal(pars->counts[s],pars->nInd) ];
+				}     
+			}
+
+			else if(doIndFasta==2) {//most common
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+					if(pars->keepSites[s]==0) continue;
+					iPos=pars->posi[s]-rStart;
+					if(pars->nInd==1)
+						rFasta[iPos] = intToRef[ angsd::getMaxCount(pars->counts[s],0) ];
+					else
+						rFasta[iPos] = intToRef[ angsd::getMaxCountTotal(pars->counts[s],pars->nInd) ];
+				}
+			}
+
+			else if(doIndFasta==3){
+				for(int i=0;i<pars->nInd;i++){
+					for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+						if(pars->keepSites[s]==0)continue;
+						iPos=pars->posi[s]-rStart;
+						tNode *tn = pars->chk->nd[s][i];
+						if(tn==NULL) continue;
+						double ebds[]= {0.0,0.0,0.0,0.0};
+						for(int b=0;b<tn->l;b++){
+							int bof = refToInt[tn->seq[b]];
+							if(bof==4) continue;
+							ebds[bof] += exp(lphred[tn->qs[b]]+lphred[tn->mapQ[b]]);
+						}
+
+						for(int b=0;0&&b<4;b++)
+							fprintf(stderr,"b:%d %f\n",b,ebds[b]);
+						int wh = angsd::whichMax(ebds,4);
+						if(wh==-1) wh=4;//catch no information
+						rFasta[iPos] = intToRef[wh];
+					}
+				}
+			}else if(doIndFasta==4){
+				//supplied by kristian ullrich
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+					if(pars->keepSites[s]==0) continue;
+					iPos=pars->posi[s]-rStart;
+					if(pars->nInd==1){
+						rFasta[iPos] = intToIupac[ angsd::getIupacCount(pars->counts[s],0,iupacRatio) ];
+					}else{
+						rFasta[iPos] = intToIupac[ angsd::getIupacCountTotal(pars->counts[s],pars->nInd,iupacRatio) ];
+					}
+				}
+			}
+			//Do transitions removal
+			if(rmTrans){
+				assert(pars->ref!=NULL);
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+
+					int ob = refToInt[rFasta[pars->posi[s]]];
+					int rb = refToInt[pars->ref[pars->posi[s]]];
+					//A <-> G, C <-> T
+					if(ob==0&&rb==2)
+						rFasta[pars->posi[s]]=intToRef[4];
+					else if(ob==2&&rb==0)
+						rFasta[pars->posi[s]]=intToRef[4];
+					else if(ob==1&&rb==3)
+						rFasta[pars->posi[s]]=intToRef[4];
+					else if(ob==3&&rb==1)
+						rFasta[pars->posi[s]]=intToRef[4];
+				}
+			}
+
+			if(wl.wFasta){
+				//if not first run
+				if (wl.start == rStart && wl.stop == rStop && wl.refid == pars->refId){
+					//still looping through chunks
+					free(wl.wFasta);
+					wl.wFasta=(char*)malloc(rSites);
+					//memset(wl.wFasta,'N',rSites);
+					//snprintf(wl.wFasta, sizeof(wl.wFasta), "%s", rFasta);
+					strncpy(wl.wFasta, rFasta, rSites);
+
+				}else{
+					//catch reg change 
+					fprintf(stderr,"REGCHANGE");
+					//write previous reg
+					//if(rFasta!=NULL){//proper case we have data
+					//writeIndFasta(&bufstr,rSites,header->target_name[currentChr],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine);
+					//FIXME
+					fprintf(stderr,"IM WRITING %s %d %d", header->target_name[wl.refid], wl.start+1, wl.stop);
+					writeIndFasta(&bufstr,wl.stop-wl.start,header->target_name[wl.refid],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine);
+					aio::bgzf_write(outfileZ,bufstr.s,bufstr.l);bufstr.l=0;
+					iPos=0;
+					wl.start = rStart;
+					wl.stop = rStop;
+					wl.refid = pars->refId;
+					free(wl.wFasta);
+					wl.wFasta=(char*)malloc(rSites);
+					//memset(wl.wFasta,'N',rSites);
+					strncpy(wl.wFasta, rFasta, rSites);
+					//snprintf(wl.wFasta, sizeof(wl.wFasta), "%s", rFasta);
+					//}
+				}
+
+			}else{
+
+				//if first run, init
+				fprintf(stderr, "INIT");
+				wl.start = rStart;
+				wl.stop = rStop;
+				wl.refid = pars->refId;
+				wl.wFasta=(char*)malloc(rSites);
+				//memset(wl.wFasta,'N',rSites);
+				strncpy(wl.wFasta, rFasta, rSites);
+				//snprintf(wl.wFasta, sizeof(wl.wFasta), "%s", rFasta);
+			}
+		}
+
+		// give nice output to be directly used in phylogenetic analyses
+		// create fasta file for each locus
+		// same loci from different individuals will be in the same loci fasta file
+		// sequences will be named by individual names (bam file names)
+		if(doLociFasta){
+			hasData=1;
+
+			char ind[fn.size() + 1];
+			strcpy(ind, fn.c_str());
+
+
+			chunkyT *chk = pars->chk;
+			// start of the region -0 indexed
+			rStart = chk->regStart;
+			// end of the region -0 indexed
+			rStop = chk->regStop;
+			// number of sites in rf
+			rSites=rStop-rStart;
+			currentChr=pars->refId;
+
+			locus = "";
+			cName = header->target_name[currentChr];
+			lStart = std::to_string(rStart+1);
+			lStop = std::to_string(rStop);
+			locus += cName + std::string("_") + lStart + std::string("-") + lStop;
+
+			postfix=".fa.gz";
+			outfileZ = aio::appFileBG(locus.c_str(),postfix);
+
+
+			// if it's a different locus
+			if(iPos == 0){
+				free(rFasta);
+				rFasta=(char*)malloc(rSites);
+				memset(rFasta,'N',rSites);
+			}
+
+
+			if(doLociFasta==1){//random number read
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+					if(pars->keepSites[s]==0) continue;
+					iPos=pars->posi[s]-rStart;
+					if(pars->nInd==1)
+						rFasta[iPos] = intToRef[ angsd::getRandomCount(pars->counts[s],0) ];
+					else
+						rFasta[iPos] = intToRef[ angsd::getRandomCountTotal(pars->counts[s],pars->nInd) ];
+				}     
+			}
+
+			else if(doLociFasta==2) {//most common
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+					if(pars->keepSites[s]==0) continue;
+					iPos=pars->posi[s]-rStart;
+					if(pars->nInd==1)
+						rFasta[iPos] = intToRef[ angsd::getMaxCount(pars->counts[s],0) ];
+					else
+						rFasta[iPos] = intToRef[ angsd::getMaxCountTotal(pars->counts[s],pars->nInd) ];
+				}
+			}
+
+			else if(doLociFasta==3){
+				for(int i=0;i<pars->nInd;i++){
+					for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+						if(pars->keepSites[s]==0) continue;
+						iPos=pars->posi[s]-rStart;
+						tNode *tn = pars->chk->nd[s][i];
+						if(tn==NULL) continue;
+						double ebds[]= {0.0,0.0,0.0,0.0};
+						for(int b=0;b<tn->l;b++){
+							int bof = refToInt[tn->seq[b]];
+							if(bof==4) continue;
+							ebds[bof] += exp(lphred[tn->qs[b]]+lphred[tn->mapQ[b]]);
+						}
+
+						for(int b=0;0&&b<4;b++)
+							fprintf(stderr,"b:%d %f\n",b,ebds[b]);
+						int wh = angsd::whichMax(ebds,4);
+						if(wh==-1) wh=4;//catch no information
+						rFasta[iPos] = intToRef[wh];
+					}
+				}
+			}else if(doLociFasta==4){
+				//supplied by kristian ullrich
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+					if(pars->keepSites[s]==0) continue;
+					iPos=pars->posi[s]-rStart;
+					if(pars->nInd==1){
+						rFasta[iPos] = intToIupac[ angsd::getIupacCount(pars->counts[s],0,iupacRatio) ];
+					}else{
+						rFasta[iPos] = intToIupac[ angsd::getIupacCountTotal(pars->counts[s],pars->nInd,iupacRatio) ];
+					}
+				}
+			}
+			//Do transitions removal
+			if(rmTrans){
+				assert(pars->ref!=NULL);
+				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
+					int ob = refToInt[rFasta[pars->posi[s]]];
+					int rb = refToInt[pars->ref[pars->posi[s]]];
+					//A <-> G, C <-> T
+					if(ob==0&&rb==2)
+						rFasta[pars->posi[s]]=intToRef[4];
+					else if(ob==2&&rb==0)
+						rFasta[pars->posi[s]]=intToRef[4];
+					else if(ob==1&&rb==3)
+						rFasta[pars->posi[s]]=intToRef[4];
+					else if(ob==3&&rb==1)
+						rFasta[pars->posi[s]]=intToRef[4];
+				}
+			}
+
+			if(rFasta!=NULL)
+				if(hasData)
+					if(wl.wFasta){
+						//if not first run
+						if (wl.start == rStart && wl.stop == rStop && wl.refid == pars->refId){
+							//still looping through chunks
+							free(wl.wFasta);
+							wl.wFasta=(char*)malloc(rSites);
+							strncpy(wl.wFasta, rFasta, rSites);
+
+						}else{
+							//catch reg change 
+							fprintf(stderr,"REGCHANGE");
+							//write previous reg
+							fprintf(stderr,"IM WRITING %s %d %d", header->target_name[wl.refid], wl.start+1, wl.stop);
+							writeLociFasta(&bufstr,wl.stop-wl.start,header->target_name[wl.refid],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine,ind);
+							aio::bgzf_write(outfileZ,bufstr.s,bufstr.l);bufstr.l=0;
+							if(outfileZ!=NULL) {
+								fprintf(stderr,"CLOSE");
+								bgzf_close(outfileZ);
+								outfileZ = NULL;
+							}
+							iPos=0;
+
+							wl.start = rStart;
+							wl.stop = rStop;
+							wl.refid = pars->refId;
+							free(wl.wFasta);
+							wl.wFasta=(char*)malloc(rSites);
+							//memset(wl.wFasta,'N',rSites);
+							strncpy(wl.wFasta, rFasta, rSites);
+							//snprintf(wl.wFasta, sizeof(wl.wFasta), "%s", rFasta);
+
+						}
+
+					}else{
+						//if first run, init
+						fprintf(stderr, "INIT");
+						wl.start = rStart;
+						wl.stop = rStop;
+						wl.refid = pars->refId;
+						wl.wFasta=(char*)malloc(rSites);
+						//memset(wl.wFasta,'N',rSites);
+						strncpy(wl.wFasta, rFasta, rSites);
+					}
+		}
+		//if(outfileZ!=NULL) {
+		//bgzf_close(outfileZ);
+		//outfileZ = NULL;
+		//}
+
+	}
+
+	if(doLoci==3){
+		//one snp per tag
+		return;
+	}
 }
 
 
 void abcLoci::changeChr(int refId) {
-	return;
+
+	if(doIndFasta){
+		if(refId!=-1){//-1 = destructor
+			free(rFasta);
+			rFasta=(char*)malloc(rSites);
+			memset(rFasta,'N',rSites);
+		}else{
+			free(rFasta);
+		}
+	}
+
+	if(doLociFasta){
+		if(refId!=-1){//-1 = destructor
+			free(rFasta);
+			rFasta=(char*)malloc(rSites);
+			memset(rFasta,'N',rSites);
+		}else{
+			free(rFasta);
+		}
+	}
 }
 
 void abcLoci::run(funkyPars *pars){

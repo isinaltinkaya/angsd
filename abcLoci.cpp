@@ -14,6 +14,7 @@
 #include <ctime>
 #include <htslib/kstring.h>
 #include <string>
+//#include <string.h>
 
 #include "aio.h"
 #include "shared.h" //<-contains the struct defintino for funkypars
@@ -111,7 +112,8 @@ void abcLoci::getOptions(argStruct *arguments){
 	}
 }
 
-void writeIndFasta(kstring_t *bufstr,size_t len,char *nam,char *d, int start, int stop, int nbpl){
+void writeIndFasta(kstring_t *bufstr,size_t len,char *nam,char *d, int start, int stop, int nbpl, funkyPars *pars){
+
 
 	fprintf(stderr,"\t-> [%s] writing loci: %s:%d-%d\n",__FUNCTION__,nam, start, stop);
 	ksprintf(bufstr,">%s_%d-%d",nam, start, stop);
@@ -231,7 +233,7 @@ abcLoci::~abcLoci(){
 	if(ref) free(ref);
 
 	if (doIndFasta){
-		writeIndFasta(&bufstr, wl.stop-wl.start,header->target_name[wl.refid],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine);
+		//writeIndFasta(&bufstr, wl.stop-wl.start,header->target_name[wl.refid],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine);
 		aio::bgzf_write(outfileZ,bufstr.s,bufstr.l);bufstr.l=0;
 	}
 
@@ -255,12 +257,14 @@ void abcLoci::print(funkyPars *pars){
 
 	extern abc **allMethods;
 	filt *fl = ((abcFilter *) allMethods[0])->fl;
+	//finish at, from filter
+	long unsigned finat= fl->offs.find(header->target_name[pars->refId])->second.len;
 
 	extern size_t total_number_of_sites_filtered;
 
 	//FIXME
 	//fprintf(stderr,"offs size %s\n", fl->offs.find(header->target_name[pars->refId])->second);
-	fprintf(stderr,"offs BEGIN %s\n", fl->keeps[]);
+	//fprintf(stderr,"TOT %lu\n", total_number_of_sites_filtered);
 	//fprintf(stderr,"\nHERE %lu\n", total_number_of_sites_filtered);
 
 	if(doLoci==0) return;
@@ -283,7 +287,7 @@ void abcLoci::print(funkyPars *pars){
 		//fprintf(stderr,"\nhere1 %lu\n", fl->keeps);
 		//fprintf(stderr,"LOVE %d" ,pars->posi[0]);
 
-		fprintf(stderr, "HELP %d", pars->numSites);
+		//fprintf(stderr, "HELP %d", pars->numSites);
 		//loop over sites
 		for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
 
@@ -333,12 +337,19 @@ void abcLoci::print(funkyPars *pars){
 			// if it's a different locus
 			//FIXME
 			//fprintf(stderr, "START AT %d\n", chk->regStart);
+			//
+			//still did not enter loop, hit continue
 			if(iPos == 0){
+				//fprintf(stderr, "ITS A SIGN\n");
 				// init region fasta
 				free(rFasta);
 				rFasta=(char*)malloc(header->target_len[currentChr]);
 				memset(rFasta,'N', header->target_len[currentChr]);
 			}
+
+			int iStart=0;
+			int iEnd=0;
+			int linc=0;
 
 			if(doIndFasta==1){//random number read
 				for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[currentChr];s++){
@@ -365,8 +376,19 @@ void abcLoci::print(funkyPars *pars){
 			else if(doIndFasta==3){
 				for(int i=0;i<pars->nInd;i++){
 					for(int s=0;s<pars->numSites&&pars->posi[s]<header->target_len[pars->refId];s++){
-						if(pars->keepSites[s]==0)continue;
-						iPos=pars->posi[s]-rStart;
+						if(pars->keepSites[s]==0){
+							//if(linc==0){
+								//fprintf(stderr, "\nLOCUS1\n")
+							//}
+							continue;
+						}
+						//FIXME
+						//if(first == 0)
+							//fprintf(stderr, "position is %d numsites %d\n", pars->posi[s], pars->numSites);
+							//first = pars->posi[s];
+						iPos=pars->posi[s];
+						//starting point of current locus, 0 indexed
+						if(iStart==0) iStart=pars->posi[s];
 						tNode *tn = pars->chk->nd[s][i];
 						if(tn==NULL) continue;
 						double ebds[]= {0.0,0.0,0.0,0.0};
@@ -382,6 +404,7 @@ void abcLoci::print(funkyPars *pars){
 						if(wh==-1) wh=4;//catch no information
 						rFasta[iPos] = intToRef[wh];
 					}
+					linc++;
 				}
 			}else if(doIndFasta==4){
 				//supplied by kristian ullrich
@@ -413,51 +436,30 @@ void abcLoci::print(funkyPars *pars){
 						rFasta[pars->posi[s]]=intToRef[4];
 				}
 			}
+			iEnd = iPos;
+			int locusLen = iEnd-iStart+1;
+			char *locusChr = fl->offs.find(header->target_name[pars->refId])->first;
 
-			if(wl.wFasta){
-				//if not first run
-				if (wl.start == rStart && wl.stop == rStop && wl.refid == pars->refId){
-					//still looping through chunks
-					free(wl.wFasta);
-					wl.wFasta=(char*)malloc(rSites);
-					//memset(wl.wFasta,'N',rSites);
-					//snprintf(wl.wFasta, sizeof(wl.wFasta), "%s", rFasta);
-					strncpy(wl.wFasta, rFasta, rSites);
-
-				}else{
-					//catch reg change 
-					fprintf(stderr,"REGCHANGE");
-					//write previous reg
-					//if(rFasta!=NULL){//proper case we have data
-					//writeIndFasta(&bufstr,rSites,header->target_name[currentChr],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine);
-					//FIXME
-					fprintf(stderr,"IM WRITING %s %d %d", header->target_name[wl.refid], wl.start+1, wl.stop);
-					writeIndFasta(&bufstr,wl.stop-wl.start,header->target_name[wl.refid],wl.wFasta,wl.start+1,wl.stop,NbasesPerLine);
-					aio::bgzf_write(outfileZ,bufstr.s,bufstr.l);bufstr.l=0;
-					iPos=0;
-					wl.start = rStart;
-					wl.stop = rStop;
-					wl.refid = pars->refId;
-					free(wl.wFasta);
-					wl.wFasta=(char*)malloc(rSites);
-					//memset(wl.wFasta,'N',rSites);
-					strncpy(wl.wFasta, rFasta, rSites);
-					//snprintf(wl.wFasta, sizeof(wl.wFasta), "%s", rFasta);
-					//}
-				}
-
-			}else{
-
-				//if first run, init
-				fprintf(stderr, "INIT");
-				wl.start = rStart;
-				wl.stop = rStop;
-				wl.refid = pars->refId;
-				wl.wFasta=(char*)malloc(rSites);
-				//memset(wl.wFasta,'N',rSites);
-				strncpy(wl.wFasta, rFasta, rSites);
-				//snprintf(wl.wFasta, sizeof(wl.wFasta), "%s", rFasta);
+			//fprintf(stderr, "IEND %d FINAT %lu \n", iEnd+1, finat);
+			if (iEnd+1 == finat){
+				fprintf(stderr,"HERE\n");
+				//end of locus
+				//fprintf(stderr, "writeIndFasta istart %d - iend %d - finat %lu",iStart+1,iEnd+1,finat);
+				char locus[locusLen+1];
+				memcpy(locus, rFasta+iStart, locusLen);
+				locus[locusLen+1]=0; //add terminator
+				writeIndFasta(&bufstr, locusLen, header->target_name[pars->refId], locus, iStart+1, iEnd+1, NbasesPerLine, pars); 
+				iPos=0;
 			}
+			//if (iEnd+1 < finat){
+				//locus not end, still looping through chunks
+				//fprintf(stderr,"chunk continues...\n");
+			//}
+			//if (iEnd+1 > finat){
+				//fprintf(stderr,"WTF...\n");
+			//}
+
+			
 		}
 
 		// give nice output to be directly used in phylogenetic analyses
@@ -636,8 +638,8 @@ void abcLoci::changeChr(int refId) {
 	if(doIndFasta){
 		if(refId!=-1){//-1 = destructor
 			free(rFasta);
-			rFasta=(char*)malloc(rSites);
-			memset(rFasta,'N',rSites);
+			//rFasta=(char*)malloc(rSites);
+			//memset(rFasta,'N',rSites);
 		}else{
 			free(rFasta);
 		}

@@ -30,18 +30,18 @@ private:
 	int rSites;
   char *ind;
 
-  typedef struct{
+	typedef struct{
 
-    char*wFasta; //fasta waiter
+		char*wFasta; //fasta waiter
 
-    int start; //start of locus
-    int stop; //stop of locus
-    int refid; //chr refid locus belongs to
-    int guests; //guest loci waiting in the waiting room
+		int start; //start of locus
+		int stop; //stop of locus
+		int refid; //chr refid locus belongs to
+		int guests; //guest loci waiting in the waiting room
 
-  }waitLoci;
+	}waitLoci;
 
-  waitLoci wl;
+	waitLoci wl;
 
 public:
   int doLociFasta;
